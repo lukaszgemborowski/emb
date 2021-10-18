@@ -6,15 +6,30 @@
 
 namespace emb::rpc
 {
+namespace detail
+{
+template<class F, class... T> struct first_type {
+    using type = F;
+};
+struct none {};
+}
 
 template<typename... Functions>
 struct api {
+    // detail
+    using d_first_function_type = typename detail::first_type<Functions...>::type;
+    using d_first_function_id_type = typename d_first_function_type::id_type;
+
+    static_assert(
+        (std::is_same_v<d_first_function_id_type, typename Functions::id_type> && ...),
+        "Every procedure ID need to have the same type"
+    );
+    // detail
+
     template<auto Id>
     constexpr auto get_signature() const {
         return get_sig_impl<Id, Functions...>();
     }
-
-    struct none {};
 
     template<auto Id, class F, class... T>
     constexpr auto get_sig_impl() const {
@@ -22,7 +37,7 @@ struct api {
             return F{};
         } else {
             if constexpr (sizeof... (T) == 0) {
-                return none {};
+                return detail::none {};
             } else {
                 return get_sig_impl<Id, T...>();
             }

@@ -10,6 +10,8 @@ namespace emb::rpc
 
 template<auto Id, typename Signature>
 struct procedure {
+    using id_type = decltype(Id);
+
     template<auto ToCheck>
     static constexpr bool compare_id() {
         if constexpr (std::is_same_v<decltype(Id), decltype(ToCheck)>) {
