@@ -72,9 +72,30 @@ std::size_t deserialize(T& tuple, unsigned char const* begin, unsigned char cons
     }
 }
 
+template<class T, std::size_t... I>
+auto size_requirements(std::index_sequence<I...>)
+{
+    struct result {
+        std::size_t max, min;
+    };
+
+    result r;
+
+    r.min = (serdes<std::tuple_element_t<I, T>>::min_size_required + ...);
+    r.max = (serdes<std::tuple_element_t<I, T>>::max_size_required + ...);
+
+    return r;
+}
 
 }
 
+// size query interface
+template<class... T> auto size_requirements(std::tuple<T...> const&)
+{
+    return detail::size_requirements<std::tuple<T...>>(std::make_index_sequence<sizeof...(T)>{});
+}
+
+// serialize interface
 template<class... T> auto serialize(std::tuple<T...> const& tuple, unsigned char* begin, unsigned char* end)
 {
     return detail::serialize(tuple, begin, end, std::make_index_sequence<sizeof...(T)>{});
@@ -90,7 +111,7 @@ template<class... T> auto serialize(std::tuple<T...> const& tuple, emb::contiguo
     return detail::serialize(tuple, dest.data(), dest.data() + dest.size(), std::make_index_sequence<sizeof...(T)>{});
 }
 
-
+// deserialize interface
 template<class... T> auto deserialize(std::tuple<T...>& tuple, unsigned char* begin, unsigned char* end)
 {
     return detail::deserialize(tuple, begin, end, std::make_index_sequence<sizeof...(T)>{});

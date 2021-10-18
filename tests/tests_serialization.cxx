@@ -27,6 +27,11 @@ TEST_CASE("Serialize tuples", "[serialize]")
         emb::ser::deserialize(todeser, emb::contiguous_buffer{buffer});
     }
 
+    auto sizes = emb::ser::size_requirements(toser);
+
+    CHECK(sizes.min == sizes.max);
+    CHECK(sizes.min == 13);
+
     CHECK(std::get<0>(todeser) == std::get<0>(toser));
     CHECK(std::get<1>(todeser) == std::get<1>(toser));
     CHECK(std::get<2>(todeser) == std::get<2>(toser));
