@@ -18,8 +18,8 @@ int main()
                     [](auto& sck) {
                         std::cout << "Accepted" << std::endl;
                     },
-                    [](auto id, auto& sck) {
-                        auto d = sck.read(32);
+                    [](auto id, emb::net::socket& sck) {
+                        auto d = sck.read<32>();
                         std::cout << d.data() << std::endl;
                     }
                 }
