@@ -24,7 +24,7 @@ int main()
 {
     // create server socket and RPC server object
     emb::net::uds_server_socket sck{"/tmp/test.sock"};
-    auto rpc = emb::rpc::make_socket_server<4>(api, sck);
+    auto rpc = emb::rpc::make_socket_server(api, sck);
 
     // define RPC callbacks (API hooks)
     rpc.callback<ApiFunction::print>() = [](char c) {

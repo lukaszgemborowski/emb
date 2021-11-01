@@ -7,7 +7,8 @@ add_library(
     src/net/socket.cxx
     src/net/uds_server_socket.cxx
     src/net/uds_client_socket.cxx
-    src/net/async_server.cxx
+    src/net/async_core.cxx
+    src/net/async_socket_server.cxx
     src/rpc/socket_client.cxx
 )
 

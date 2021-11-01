@@ -61,19 +61,6 @@ void socket::close() noexcept {
     }
 }
 
-std::vector<unsigned char> socket::read(std::size_t count) const {
-    std::vector<unsigned char> result;
-    result.resize(count);
-    auto res = ::read(descriptor(), result.data(), count);
-
-    if (res == -1) {
-        throw std::runtime_error("read() failed");
-    }
-
-    result.resize(res);
-    return result;
-}
-
 int socket::read_some(unsigned char* data, std::size_t size) const
 {
     return ::read(descriptor(), data, size);
@@ -87,7 +74,9 @@ void socket::read(unsigned char* data, std::size_t size) const
         auto r = ::read(descriptor(), data + total, size - total);
 
         if (r < 0) {
-            std::runtime_error("read() failed");
+            throw std::runtime_error("read() failed");
+        } else if (r == 0) {
+            throw connection_closed{"read"};
         }
 
         total += r;
@@ -95,26 +84,13 @@ void socket::read(unsigned char* data, std::size_t size) const
     while (total < size);
 }
 
-void socket::read(emb::contiguous_buffer<unsigned char> dest, std::size_t count)
-{
-    read(dest.data(), count);
-}
+int socket::write_some(char unsigned const* data, std::size_t size) const {
+    auto r = ::write(descriptor(), data, size);
 
-void socket::write(std::vector<char> data) const {
-    if (::write(descriptor(), data.data(), data.size()) == -1) {
+    if (r == -1) {
         throw std::runtime_error{"write() failed"};
-    }
-}
-
-void socket::write(std::string_view data) const {
-    if (::write(descriptor(), data.data(), data.size()) == -1) {
-        throw std::runtime_error{"write() failed"};
-    }
-}
-
-void socket::write(char unsigned const* data, std::size_t size) const {
-    if (::write(descriptor(), data, size) == -1) {
-        throw std::runtime_error{"write() failed"};
+    } else {
+        return r;
     }
 }
 

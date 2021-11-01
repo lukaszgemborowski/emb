@@ -73,7 +73,7 @@ std::size_t deserialize(T& tuple, unsigned char const* begin, unsigned char cons
 }
 
 template<class T, std::size_t... I>
-auto size_requirements(std::index_sequence<I...>)
+constexpr auto size_requirements(std::index_sequence<I...>)
 {
     struct result {
         std::size_t max, min;
@@ -90,7 +90,7 @@ auto size_requirements(std::index_sequence<I...>)
 }
 
 // size query interface
-template<class... T> auto size_requirements(std::tuple<T...> const&)
+template<class... T> constexpr auto size_requirements(std::tuple<T...> const&)
 {
     return detail::size_requirements<std::tuple<T...>>(std::make_index_sequence<sizeof...(T)>{});
 }

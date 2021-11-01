@@ -2,150 +2,149 @@
 #define EMB_RPC_SOCKET_SERVER_HPP
 
 #include <emb/net/socket.hpp>
-#include <emb/net/async_server.hpp>
+#include <emb/net/async_socket_server.hpp>
 #include <emb/ser/serialize.hpp>
+#include <emb/rpc/callback_tuple.hpp>
+#include <emb/rpc/protocol.hpp>
 #include <atomic>
 
 namespace emb::rpc
 {
 
-namespace detail
-{
-
-template<auto Id, class ProcTypes>
-struct callback {
-    static constexpr auto id = Id;
-    typename ProcTypes::std_function callback;
-    using arguments_tuple = typename ProcTypes::arguments_tuple;
-    using return_type = typename ProcTypes::return_type;
-};
-
-}
-
-template<std::size_t MaxClients, class Api>
+template<class Api>
 class socket_server {
     template<auto Id>
-    struct callback_set_proxy
-    {
-        callback_set_proxy(socket_server& srv)
-            : srv_ {srv}
+    struct callback_set_proxy {
+        callback_set_proxy(callback_tuple<Api>& ct)
+            : ct_ {ct}
         {}
 
-        template<class Func>
-        void operator=(Func func) {
-            srv_.set_callback<Id>(func);
+        template<class Fun>
+        void operator=(Fun fun) {
+            ct_.template set_callback<Id>(fun);
         }
-
     private:
-        socket_server& srv_;
+        callback_tuple<Api>& ct_;
+    };
+
+    struct client_buffers {
+        net::async_core::node_id id = 0;
+        int last_request;
+        std::array<unsigned char, 256> in_buff;
+        std::array<unsigned char, 256> out_buff;
     };
 public:
     socket_server(emb::net::socket& sck)
-        : multiplexer_ {sck, {*this, &socket_server::accepted, &socket_server::ready}}
-        , running_{true}
-    {}
-
-    template<auto Id>
-    auto callback() {
-        return callback_set_proxy<Id>{*this};
-    }
-
-    template<auto Id, class Func>
-    void set_callback(Func func) {
-        set_callback_impl<Id>(func, std::make_index_sequence<std::tuple_size_v<callbacks_tuple>>{});
-    }
-
-    template<auto Id, class Func, std::size_t... I>
-    void set_callback_impl(Func func, std::index_sequence<I...>) {
-        auto set_if_id = [&](auto& cb) {
-            if constexpr (cb.id == Id) {
-                cb.callback = func;
-            }
-        };
-
-        (set_if_id(std::get<I>(callbacks_)), ...);
-    }
-
-    void run()
+        : server_ {sck}
+        , running_ {true}
     {
+        server_.on_accept = [this](auto id) { accept(id); };
+    }
+
+    void run() {
         while (running_) {
             run_once();
         }
     }
 
-    void run_once()
-    {
-        multiplexer_.run_once();
+    void run_once() {
+        server_.run_once();
     }
 
-    void stop_running()
-    {
+    void stop_running() {
         running_ = false;
     }
 
+    template<auto Id>
+    auto callback() {
+        return callback_set_proxy<Id>{callbacks_};
+    }
+
 private:
-    void accepted(emb::net::socket&) {
-    }
-
-    void ready(int, emb::net::socket& sck) {
-        auto id = sck.read<int>();
-        auto size = sck.read<std::size_t>();
-        sck.read({buffer_.data(), buffer_.size()}, size);
-        receive(id, sck, std::make_index_sequence<std::tuple_size_v<callbacks_tuple>>{});
-    }
-
-    template<std::size_t C, std::size_t... Idx>
-    void receive(int id, emb::net::socket& sck, std::index_sequence<C, Idx...>) {
-        if (static_cast<decltype(std::get<C>(callbacks_).id)>(id) == std::get<C>(callbacks_).id) {
-            using callback_type = typename std::tuple_element_t<C, callbacks_tuple>;
-            typename callback_type::arguments_tuple tup;
-            ser::deserialize(tup, buffer_.data(), buffer_.data() + buffer_.size());
-
-            if constexpr (std::is_same_v<typename callback_type::return_type, void>) {
-                std::apply(std::get<C>(callbacks_).callback, tup);
-            } else {
-                auto result = std::apply(std::get<C>(callbacks_).callback, tup);
-                std::tuple<typename callback_type::return_type> resp{result};
-                auto size = ser::serialize(resp, buffer_.data(), buffer_.data() + buffer_.size());
-                sck.write(size);
-                sck.write(buffer_.data(), size);
-            }
+    void accept(net::async_core::node_id id) {
+        auto slot_id = find_empty_slot();
+        if (slot_id == -1) {
             return;
         }
 
-        receive(id, sck, std::index_sequence<Idx...>{});
+        auto& slot = clients_[slot_id];
+        slot.id = id;
+        shedule_next_request(slot);
     }
 
-    void receive(int, emb::net::socket&, std::index_sequence<>){}
+    void shedule_next_request(client_buffers &slot) {
+        server_.read(
+            slot.id,
+            emb::contiguous_buffer{slot.in_buff, ser::size_requirements(protocol::request_header{}).min},
+            [&slot, this] { handle_request_header(slot); }
+        );
+    }
 
-    struct transform {
-        template<class T>
-        struct type_impl {
-            using procedure_types = decltype(T::get_types());
-            using result = detail::callback<
-                T::get_id(),
-                procedure_types>;
-        };
+    void handle_request_header(client_buffers &slot) {
+        protocol::request_header header;
+        ser::deserialize(header, slot.in_buff);
 
-        template<class T>
-        using type = typename type_impl<T>::result;
-    };
+        slot.last_request = std::get<0>(header);
 
-    using callbacks_tuple = typename decltype(Api{}.template transform<transform>())::as_tuple;
+        server_.read(
+            slot.id,
+            emb::contiguous_buffer{slot.in_buff, std::get<1>(header)},
+            [&slot, this] { handle_request_data(slot); }
+        );
+    }
+
+    void handle_request_data(client_buffers &slot) {
+        callbacks_.visit(
+            slot.last_request,
+            [&slot, this](auto& callback_data) {
+                using callback_type = std::decay_t<decltype(callback_data)>;
+                typename callback_type::arguments_tuple arguments;
+                ser::deserialize(arguments, slot.in_buff);
+
+                if constexpr (std::is_same_v<void, typename callback_type::return_type>) {
+                    std::apply(callback_data.callback, arguments);
+                    shedule_next_request(slot);
+                } else {
+                    std::tuple<typename callback_type::return_type> response{
+                        std::apply(callback_data.callback, arguments)
+                    };
+
+                    auto size = ser::serialize(response, emb::contiguous_buffer{slot.out_buff}.slice(sizeof(std::size_t), emb::npos));
+                    std::memcpy(slot.out_buff.data(), &size, sizeof(size));
+
+                    server_.write(
+                        slot.id,
+                        emb::contiguous_buffer{slot.out_buff, size + sizeof(size)},
+                        [&slot, this] {
+                            shedule_next_request(slot);
+                        }
+                    );
+                }
+            }
+        );
+    }
+
+    std::size_t find_empty_slot() {
+        for (std::size_t i = 0; i < MAX_CLIENTS; ++i) {
+            if (clients_[i].id == 0) {
+                return i;
+            }
+        }
+
+        return -1;
+    }
 
 private:
-    emb::net::async_server<
-        emb::net::method_dispatcher<socket_server<MaxClients, Api>>,
-        emb::net::static_sockets_buffer<MaxClients>>
-            multiplexer_;
-    callbacks_tuple callbacks_;
-    std::array<unsigned char, 512> buffer_;
-    std::atomic<bool> running_;
+    emb::net::async_socket_server   server_;
+    callback_tuple<Api>             callbacks_;
+    std::atomic<bool>               running_;
+    static constexpr auto MAX_CLIENTS = 32;
+    std::array<client_buffers, MAX_CLIENTS> clients_;
 };
 
-template<std::size_t N, class Api>
+template<class Api>
 auto make_socket_server(Api, emb::net::socket& sck) {
-    return socket_server<N, Api>(sck);
+    return socket_server<Api>(sck);
 }
 
 }
