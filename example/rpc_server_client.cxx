@@ -6,53 +6,82 @@
 #include <thread>
 #include <iostream>
 
-// api definition
-enum class ApiFunction {
-    add, print, stop
+// a simple API definition, wrapped in structure for convenience
+struct SimpleApi
+{
+    // exposed functions
+    enum class Function {
+        add,
+        mul,
+        stop
+    };
+
+    // create API object for use in emb::rpc subsystem
+    static constexpr auto make() {
+        using namespace emb::rpc;
+        return make_api(
+            // map function ID to function signature
+            procedure<Function::add,    int (int, int)>{},
+            procedure<Function::mul,    int (int, int)>{},
+            procedure<Function::stop,   void()        >{}
+        );
+    }
 };
 
-constexpr auto api = []{
-    using namespace emb::rpc;
-    return make_api(
-        procedure<ApiFunction::add,     int  (int, int)>{},
-        procedure<ApiFunction::print,   void (char)>{},
-        procedure<ApiFunction::stop,    void()>{}
-    );
-}();
+class Server
+{
+public:
+    explicit Server(const char* socket_path)
+        : socket_ {socket_path}
+        , rpc_ {socket_}
+    {
+        rpc_.callback<SimpleApi::Function::add>() = [this](int a, int b) { return add(a, b); };
+        rpc_.callback<SimpleApi::Function::mul>() = [this](int a, int b) { return mul(a, b); };
+        rpc_.callback<SimpleApi::Function::stop>() = [this] { stop(); };
+    }
+
+    void run() {
+        thread_ = std::thread { [this] { rpc_.run(); } };
+    }
+
+    ~Server() {
+        thread_.join();
+    }
+
+private:
+    int add(int a, int b) {
+        return a + b;
+    }
+
+    int mul(int a, int b) {
+        return a * b;
+    }
+
+    void stop() {
+        rpc_.stop_running();
+    }
+
+private:
+    emb::net::uds_server_socket socket_;
+    emb::rpc::socket_server<decltype(SimpleApi::make())> rpc_;
+    std::thread thread_;
+};
 
 int main()
 {
-    // create server socket and RPC server object
-    emb::net::uds_server_socket sck{"/tmp/test.sock"};
-    auto rpc = emb::rpc::make_socket_server(api, sck);
-
-    // define RPC callbacks (API hooks)
-    rpc.callback<ApiFunction::print>() = [](char c) {
-        std::cout << "ApiFunction::print received: '" << c << "'" << std::endl;
-    };
-
-    rpc.callback<ApiFunction::add>() = [](int a, int b) { 
-        std::cout << "ApiFunction::add received: " << a << " + " << b << std::endl;
-        return a + b;
-    };
-
-    rpc.callback<ApiFunction::stop>() = [&]() { 
-        std::cout << "stop requested" << std::endl;
-        rpc.stop_running();
-    };
-
-    // start server in a separate thread
-    std::thread server_thread {[&]{ rpc.run(); }};
+    const char* socket_name = "/tmp/test.sock";
+    Server srv{socket_name};
 
     // create and connect RPC client
-    emb::net::uds_client_socket cs{"/tmp/test.sock"};
-    auto cli = emb::rpc::make_socket_client(api, cs);
+    emb::net::uds_client_socket cs{socket_name};
+    auto cli = emb::rpc::make_socket_client(SimpleApi::make(), cs);
+
+    // run the server in its own thread
+    srv.run();
 
     // remotely call the server API
-    cli.call<ApiFunction::print>('x');
-    auto r = cli.call<ApiFunction::add>(40, 2);
-    std::cout << "result " << r << std::endl;
-    cli.call<ApiFunction::stop>();
+    std::cout << "Remote add result (40 + 2) = " << cli.call<SimpleApi::Function::add>(40, 2) << std::endl;
+    std::cout << "Remote mul result (21 * 2) = " << cli.call<SimpleApi::Function::mul>(21, 2) << std::endl;
 
-    server_thread.join();
+    cli.call<SimpleApi::Function::stop>();
 }
