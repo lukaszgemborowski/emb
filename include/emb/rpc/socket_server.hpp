@@ -2,6 +2,7 @@
 #define EMB_RPC_SOCKET_SERVER_HPP
 
 #include <emb/net/socket.hpp>
+#include <emb/net/transfer_chain.hpp>
 #include <emb/net/async_socket_server.hpp>
 #include <emb/ser/serialize.hpp>
 #include <emb/rpc/callback_tuple.hpp>

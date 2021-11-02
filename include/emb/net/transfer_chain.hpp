@@ -66,6 +66,30 @@ private:
     func_type func_;
 };
 
+class write_conditional
+{
+public:
+    using func_type = std::function<std::size_t (emb::contiguous_buffer<unsigned char>)>;
+
+    write_conditional(func_type func)
+        : func_ {std::move(func)}
+    {}
+
+    template<class Context, class Func>
+    void execute(Context& ctx, Func next) {
+        auto const bytes_to_write = func_(emb::contiguous_buffer<unsigned char>{ctx.buffer});
+
+        ctx.async.write(
+            ctx.node,
+            emb::contiguous_buffer{ctx.buffer, bytes_to_write},
+            next
+        );
+    }
+
+private:
+    func_type func_;
+};
+
 class process_data
 {
 public:
@@ -90,6 +114,10 @@ inline auto read(std::size_t count) {
 
 inline auto read(read_conditional::func_type func) {
     return read_conditional(func);
+}
+
+inline auto write(write_conditional::func_type func) {
+    return write_conditional(func);
 }
 
 inline auto process(process_data::func_type func) {
@@ -140,7 +168,6 @@ private:
             }
         );
     }
-
 
 private:
     detail::context<RWBuffer>   ctx_;
