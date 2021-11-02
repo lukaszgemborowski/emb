@@ -2,44 +2,160 @@
 #define EMB_RPC_TRANSFER_CHAIN_HPP
 
 #include <emb/net/async_socket_server.hpp>
+#include <emb/call_chain.hpp>
+#include <functional>
 #include <tuple>
+
+
+#include <iostream>
 
 namespace emb::net
 {
 
+namespace transfer_chain
+{
 namespace detail
 {
-template<class Func>
-struct chain_read {
-    chain_read(std::size_t count, Func func)
-        : count_ {count}
-        , func_ {func}
-    {}
-
-private:
-    std::size_t count_;
-    Func func_;
+template<class Buffer>
+struct context
+{
+    Buffer&                 buffer;
+    async_socket_server&    async;
+    async_core::node_id     node;
 };
 }
 
-template<class RWBuffer, class... Seq>
-class transfer_chain
+class read_unconditional
 {
 public:
-    transfer_chain(async_socket_server& async, RWBuffer& buffer)
-        : async_ {async}
-        , buffer_ {buffer}
+    read_unconditional(std::size_t count)
+        : count_ {count}
     {}
 
-    template<class Func>
-    auto read(std::size_t count, Func func) {
-        return transfer_chain<RWBuffer, Seq..., chain_read>
+    template<class Context, class Func>
+    void execute(Context& ctx, Func next) {
+        std::cout << "unc read scheduled, size " << count_ << std::endl;
+        ctx.async.read(
+            ctx.node,
+            emb::contiguous_buffer{ctx.buffer, count_},
+            next
+        );
     }
 
 private:
-    async_socket_server& async_;
-    RWBuffer& buffer_;
+    std::size_t count_;
 };
+
+class read_conditional
+{
+public:
+    using func_type = std::function<std::size_t (emb::contiguous_buffer<unsigned char>)>;
+
+    read_conditional(func_type func)
+        : func_ {std::move(func)}
+    {}
+
+    template<class Context, class Func>
+    void execute(Context& ctx, Func next) {
+        auto const bytes_to_read = func_(emb::contiguous_buffer<unsigned char>{ctx.buffer});
+
+        std::cout << "cond read of " << bytes_to_read << std::endl;
+
+        ctx.async.read(
+            ctx.node,
+            emb::contiguous_buffer{ctx.buffer, bytes_to_read},
+            next
+        );
+    }
+
+private:
+    func_type func_;
+};
+
+class process_data
+{
+public:
+    using func_type = std::function<void (emb::contiguous_buffer<unsigned char>)>;
+
+    process_data(func_type func)
+        : func_ {std::move(func)}
+    {}
+
+    template<class Context, class Func>
+    void execute(Context& ctx, Func next) {
+        std::cout << "processing data" << std::endl;
+        func_(emb::contiguous_buffer<unsigned char>{ctx.buffer});
+    }
+
+private:
+    func_type func_;
+};
+
+inline auto read(std::size_t count) {
+    return read_unconditional{count};
+}
+
+inline auto read(read_conditional::func_type func) {
+    return read_conditional(func);
+}
+
+inline auto process(process_data::func_type func) {
+    return process_data{func};
+}
+
+template<class RWBuffer, class... Seq>
+class root
+{
+public:
+    root(async_socket_server& async, async_core::node_id node, RWBuffer& buffer)
+        : ctx_ {buffer, async, node}
+    {}
+
+    template<class... S>
+    root(detail::context<RWBuffer> const& ctx, std::tuple<S...>&& s)
+        : ctx_ {ctx}
+        , sequence_ {std::move(s)}
+    {}
+
+    template<class S>
+    auto append(S&& node) {
+        return root<RWBuffer, Seq..., S>{
+            ctx_,
+            std::tuple_cat(std::move(sequence_), std::tuple<S>{std::move(node)})
+        };
+    }
+
+    template<class S>
+    auto operator>>(S&& node) {
+        return append(std::move(node));
+    }
+
+    void run(async_core::node_id node) {
+        ctx_.node = node;
+        execute<0>();
+    }
+
+private:
+    template<std::size_t I>
+    void execute() {
+        auto& step = std::get<I>(sequence_);
+        step.execute(
+            ctx_, [&] {
+                std::cout << "callback got! " << std::endl;
+                if constexpr (I < sizeof...(Seq) - 1) {
+                    execute<I + 1>();
+                }
+            }
+        );
+    }
+
+
+private:
+    detail::context<RWBuffer>   ctx_;
+    std::tuple<Seq...>          sequence_;
+};
+
+}
 
 }
 

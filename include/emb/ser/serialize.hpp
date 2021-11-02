@@ -76,7 +76,7 @@ template<class T, std::size_t... I>
 constexpr auto size_requirements(std::index_sequence<I...>)
 {
     struct result {
-        std::size_t max, min;
+        std::size_t max = 0, min = 0;
     };
 
     result r;
