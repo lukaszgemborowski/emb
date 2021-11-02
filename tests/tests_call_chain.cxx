@@ -3,9 +3,8 @@
 #include "emb/net/async_socket_server.hpp"
 #include "emb/net/uds_client_socket.hpp"
 #include "emb/net/uds_server_socket.hpp"
-#include "catch.hpp"
-#include <iostream>
 #include <thread>
+#include "catch.hpp"
 
 TEST_CASE("Test server-side chain", "[transfer_chain]")
 {
@@ -27,10 +26,7 @@ TEST_CASE("Test server-side chain", "[transfer_chain]")
         ;
 
     // activate a chain on accept
-    ass.on_accept = [&](auto id) {
-        std::cout << "Accepted " << id << std::endl;
-        chain.run(id);
-    };
+    ass.on_accept = [&](auto id) { chain.run(id); };
 
     // run the server!
     std::thread thr {

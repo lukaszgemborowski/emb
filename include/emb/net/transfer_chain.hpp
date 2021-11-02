@@ -6,9 +6,6 @@
 #include <functional>
 #include <tuple>
 
-
-#include <iostream>
-
 namespace emb::net
 {
 
@@ -34,7 +31,6 @@ public:
 
     template<class Context, class Func>
     void execute(Context& ctx, Func next) {
-        std::cout << "unc read scheduled, size " << count_ << std::endl;
         ctx.async.read(
             ctx.node,
             emb::contiguous_buffer{ctx.buffer, count_},
@@ -59,8 +55,6 @@ public:
     void execute(Context& ctx, Func next) {
         auto const bytes_to_read = func_(emb::contiguous_buffer<unsigned char>{ctx.buffer});
 
-        std::cout << "cond read of " << bytes_to_read << std::endl;
-
         ctx.async.read(
             ctx.node,
             emb::contiguous_buffer{ctx.buffer, bytes_to_read},
@@ -83,7 +77,6 @@ public:
 
     template<class Context, class Func>
     void execute(Context& ctx, Func next) {
-        std::cout << "processing data" << std::endl;
         func_(emb::contiguous_buffer<unsigned char>{ctx.buffer});
     }
 
@@ -141,7 +134,6 @@ private:
         auto& step = std::get<I>(sequence_);
         step.execute(
             ctx_, [&] {
-                std::cout << "callback got! " << std::endl;
                 if constexpr (I < sizeof...(Seq) - 1) {
                     execute<I + 1>();
                 }
