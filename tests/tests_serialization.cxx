@@ -36,3 +36,16 @@ TEST_CASE("Serialize tuples", "[serialize]")
     CHECK(std::get<1>(todeser) == std::get<1>(toser));
     CHECK(std::get<2>(todeser) == std::get<2>(toser));
 }
+
+TEST_CASE("Serialize an std::array", "[serialize]")
+{
+    std::tuple<int, std::array<char, 6>> toser{42, {'h', 'e', 'l', 'l', 'o', 0}};
+    decltype(toser) todeser;
+    std::array<unsigned char, 64> buffer;
+
+    emb::ser::serialize(toser, emb::contiguous_buffer{buffer});
+    emb::ser::deserialize(todeser, emb::contiguous_buffer{buffer});
+
+    REQUIRE(std::get<0>(toser) == std::get<0>(todeser));
+    REQUIRE(std::get<1>(toser) == std::get<1>(todeser));
+}
