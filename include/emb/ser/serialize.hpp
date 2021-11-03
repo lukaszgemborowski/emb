@@ -14,6 +14,8 @@ namespace detail
 
 template<class T>
 struct serdes {
+    static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
+
     static constexpr auto min_size_required = sizeof(T);
     static constexpr auto max_size_required = sizeof(T);
 
@@ -34,6 +36,40 @@ struct serdes {
 
         std::memcpy(&object, *curr, sizeof(T));
         (*curr) += sizeof(T);
+        return true;
+    }
+};
+
+template<class T, std::size_t N>
+struct serdes<std::array<T, N>> {
+    static constexpr auto min_size_required = N * serdes<T>::min_size_required;
+    static constexpr auto max_size_required = N * serdes<T>::max_size_required;
+
+    static bool serialize(std::array<T, N> const& object, unsigned char** curr, unsigned char* end) {
+        if (end - *curr  < min_size_required) {
+            return false;
+        }
+
+        for (std::size_t i = 0; i < N; ++i) {
+            if (serdes<T>::serialize(object[i], curr, end) == false) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    static bool deserialize(std::array<T, N>& object, unsigned char const** curr, unsigned char const* end) {
+        if (end - *curr < min_size_required) {
+            return false;
+        }
+
+        for (std::size_t i = 0; i < N; ++i) {
+            if (serdes<T>::deserialize(object[i], curr, end) == false) {
+                return false;
+            }
+        }
+
         return true;
     }
 };
