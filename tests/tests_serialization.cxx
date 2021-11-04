@@ -30,7 +30,7 @@ TEST_CASE("Serialize tuples", "[serialize]")
     auto sizes = emb::ser::size_requirements(toser);
 
     CHECK(sizes.min == sizes.max);
-    CHECK(sizes.min == 13);
+    CHECK(sizes.min == 17);
 
     CHECK(std::get<0>(todeser) == std::get<0>(toser));
     CHECK(std::get<1>(todeser) == std::get<1>(toser));
@@ -48,4 +48,26 @@ TEST_CASE("Serialize an std::array", "[serialize]")
 
     REQUIRE(std::get<0>(toser) == std::get<0>(todeser));
     REQUIRE(std::get<1>(toser) == std::get<1>(todeser));
+}
+
+TEST_CASE("Serialize a size of the tuple", "[serialize]")
+{
+    using tuple_t = std::tuple<char, char, char>;
+    static constexpr auto three_char_size = sizeof(char) * 3;
+    tuple_t t;
+    std::array<unsigned char, 64> buffer;
+    unsigned char* beg = buffer.data();
+    unsigned char* end = buffer.data() + buffer.size();
+
+    emb::ser::detail::serdes<tuple_t>::serialize(t, &beg, end);
+
+    REQUIRE((end - beg) > three_char_size);
+
+    std::uint32_t written_size = 0;
+    const unsigned char* beg2 = buffer.data();
+    emb::ser::detail::serdes<std::uint32_t>::deserialize(written_size, &beg2, end);
+
+    CHECK(written_size == three_char_size);
+    CHECK(three_char_size + sizeof(emb::ser::tuple_size_type) == emb::ser::deserialize_size(emb::contiguous_buffer{buffer}));
+    CHECK(emb::ser::deserialize_size(emb::contiguous_buffer{buffer}) == emb::ser::size_requirements(t).min);
 }
