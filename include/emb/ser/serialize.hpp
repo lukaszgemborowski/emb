@@ -9,15 +9,16 @@
 
 namespace emb::ser
 {
+
+using tuple_size_type = std::uint32_t;
+constexpr tuple_size_type invalid_size = 0xffffffff;
+
 namespace detail
 {
 
 template<class T>
 struct serdes {
     static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
-
-    static constexpr auto min_size_required = sizeof(T);
-    static constexpr auto max_size_required = sizeof(T);
 
     static bool serialize(T const& object, unsigned char** curr, unsigned char* end) {
         if (end - *curr < sizeof(T)) {
@@ -38,15 +39,20 @@ struct serdes {
         (*curr) += sizeof(T);
         return true;
     }
+
+    static constexpr auto min_size() {
+        return sizeof(T);
+    }
+
+    static constexpr auto max_size() {
+        return sizeof(T);
+    }
 };
 
 template<class T, std::size_t N>
 struct serdes<std::array<T, N>> {
-    static constexpr auto min_size_required = N * serdes<T>::min_size_required;
-    static constexpr auto max_size_required = N * serdes<T>::max_size_required;
-
     static bool serialize(std::array<T, N> const& object, unsigned char** curr, unsigned char* end) {
-        if (end - *curr  < min_size_required) {
+        if (end - *curr  < min_size()) {
             return false;
         }
 
@@ -60,7 +66,7 @@ struct serdes<std::array<T, N>> {
     }
 
     static bool deserialize(std::array<T, N>& object, unsigned char const** curr, unsigned char const* end) {
-        if (end - *curr < min_size_required) {
+        if (end - *curr < min_size()) {
             return false;
         }
 
@@ -72,23 +78,102 @@ struct serdes<std::array<T, N>> {
 
         return true;
     }
+
+    static constexpr auto min_size() {
+        return serdes<T>::min_size() * N;
+    }
+
+    static constexpr auto max_size() {
+        return serdes<T>::min_size() * N;
+    }
 };
 
-template<class T> bool serialize_single(T const& object, unsigned char** curr, unsigned char* end)
+template<class... T>
+struct serdes<std::tuple<T...>>
 {
-    return serdes<T>::serialize(object, curr, end);
-}
+    static bool serialize(std::tuple<T...> const& object, unsigned char** curr, unsigned char* end) {
+        std::uint32_t overall_size = 0;
+        bool have_space = true;
+        auto buffer_begin = *curr;
+        *curr += sizeof(overall_size);
 
-template<class T> bool deserialize_single(T& object, unsigned char const** curr, unsigned char const* end)
-{
-    return serdes<T>::deserialize(object, curr, end);
-}
+        visit_all(
+            [&](auto const& value) {
+                using type = std::remove_reference_t<std::remove_const_t<decltype(value)>>;
+                if (have_space && !serdes<type>::serialize(value, curr, end)) {
+                    have_space = false;
+                }
+            },
+            object,
+            std::make_index_sequence<sizeof...(T)>{}
+        );
 
-template<class T, std::size_t... I>
-std::size_t serialize(T const& tuple, unsigned char* begin, unsigned char* end, std::index_sequence<I...>)
+        if (!have_space) {
+            return false;
+        }
+
+        overall_size = *curr - buffer_begin - sizeof(overall_size);
+        serdes<std::uint32_t>::serialize(overall_size, &buffer_begin, end);
+
+        return true;
+    }
+
+    static bool deserialize(std::tuple<T...>& object, unsigned char const** curr, unsigned char const* end) {
+        std::uint32_t overall_size = -1;
+        bool correct = true;
+        if (!serdes<std::uint32_t>::deserialize(overall_size, curr, end)) {
+            return false;
+        }
+
+        visit_all(
+            [&](auto& value) {
+                using type = std::remove_reference_t<std::remove_const_t<decltype(value)>>;
+                if (correct && !serdes<type>::deserialize(value, curr, end)) {
+                    correct = false;
+                }
+            },
+            object,
+            std::make_index_sequence<sizeof...(T)>{}
+        );
+
+        return correct;
+    }
+
+    static constexpr auto min_size() {
+        return min_size_all(std::make_index_sequence<sizeof...(T)>{}) + sizeof(std::uint32_t);
+    }
+
+    static constexpr auto max_size() {
+        return max_size_all(std::make_index_sequence<sizeof...(T)>{}) + sizeof(std::uint32_t);
+    }
+
+private:
+    template<std::size_t... I>
+    static constexpr auto min_size_all(std::index_sequence<I...>) {
+        return (serdes<std::tuple_element_t<I, std::tuple<T...>>>::min_size() + ...);
+    }
+
+    template<std::size_t... I>
+    static constexpr auto max_size_all(std::index_sequence<I...>) {
+        return (serdes<std::tuple_element_t<I, std::tuple<T...>>>::max_size() + ...);
+    }
+
+    template<class Func, class Tuple, std::size_t C, std::size_t... I>
+    static constexpr auto visit_all(Func func, Tuple& tuple, std::index_sequence<C, I...>) {
+        func(std::get<C>(tuple));
+        visit_all(func, tuple, std::index_sequence<I...>{});
+    }
+
+    template<class Func, class Tuple>
+    static constexpr auto visit_all(Func, Tuple&, std::index_sequence<>) {}
+};
+
+template<class T>
+std::size_t serialize(T const& tuple, unsigned char* begin, unsigned char* end)
 {
     auto *curr = begin;
-    bool result = (serialize_single(std::get<I>(tuple), &curr, end) && ...);
+    bool result = serdes<T>::serialize(tuple, &curr, end);
+
     if (result) {
         return curr - begin;
     } else {
@@ -96,31 +181,17 @@ std::size_t serialize(T const& tuple, unsigned char* begin, unsigned char* end, 
     }
 }
 
-template<class T, std::size_t... I>
-std::size_t deserialize(T& tuple, unsigned char const* begin, unsigned char const* end, std::index_sequence<I...>)
+template<class T>
+std::size_t deserialize(T& tuple, unsigned char const* begin, unsigned char const* end)
 {
     auto *curr = begin;
-    bool result = (deserialize_single(std::get<I>(tuple), &curr, end) && ...);
+    bool result = serdes<T>::deserialize(tuple, &curr, end);
+
     if (result) {
         return curr - begin;
     } else {
         return -1;
     }
-}
-
-template<class T, std::size_t... I>
-constexpr auto size_requirements(std::index_sequence<I...>)
-{
-    struct result {
-        std::size_t max, min;
-    };
-
-    result r;
-
-    r.min = (serdes<std::tuple_element_t<I, T>>::min_size_required + ...);
-    r.max = (serdes<std::tuple_element_t<I, T>>::max_size_required + ...);
-
-    return r;
 }
 
 }
@@ -128,39 +199,63 @@ constexpr auto size_requirements(std::index_sequence<I...>)
 // size query interface
 template<class... T> constexpr auto size_requirements(std::tuple<T...> const&)
 {
-    return detail::size_requirements<std::tuple<T...>>(std::make_index_sequence<sizeof...(T)>{});
+    struct result {
+        std::size_t max, min;
+    };
+
+    result r;
+    r.min = detail::serdes<std::tuple<T...>>::min_size();
+    r.max = detail::serdes<std::tuple<T...>>::max_size();
+
+    return r;
+}
+
+inline auto deserialize_size(emb::contiguous_buffer<const unsigned char> buffer)
+{
+    if (buffer.size() < sizeof(std::uint32_t)) {
+        return invalid_size;
+    }
+
+    tuple_size_type size = 0;
+    auto ptr = buffer.data();
+    auto pptr = &ptr;
+    if (detail::serdes<tuple_size_type>::deserialize(size, pptr, buffer.data() + buffer.size())) {
+        return size + static_cast<tuple_size_type>(sizeof(tuple_size_type));
+    } else {
+        return invalid_size;
+    }
 }
 
 // serialize interface
 template<class... T> auto serialize(std::tuple<T...> const& tuple, unsigned char* begin, unsigned char* end)
 {
-    return detail::serialize(tuple, begin, end, std::make_index_sequence<sizeof...(T)>{});
+    return detail::serialize(tuple, begin, end);
 }
 
 template<std::size_t N, class... T> auto serialize(std::tuple<T...> const& tuple, std::array<unsigned char, N>& dest)
 {
-    return detail::serialize(tuple, dest.data(), dest.data() + dest.size(), std::make_index_sequence<sizeof...(T)>{});
+    return detail::serialize(tuple, dest.data(), dest.data() + dest.size());
 }
 
 template<class... T> auto serialize(std::tuple<T...> const& tuple, emb::contiguous_buffer<unsigned char>&& dest)
 {
-    return detail::serialize(tuple, dest.data(), dest.data() + dest.size(), std::make_index_sequence<sizeof...(T)>{});
+    return detail::serialize(tuple, dest.data(), dest.data() + dest.size());
 }
 
 // deserialize interface
 template<class... T> auto deserialize(std::tuple<T...>& tuple, unsigned char* begin, unsigned char* end)
 {
-    return detail::deserialize(tuple, begin, end, std::make_index_sequence<sizeof...(T)>{});
+    return detail::deserialize(tuple, begin, end);
 }
 
 template<std::size_t N, class... T> auto deserialize(std::tuple<T...>& tuple, std::array<unsigned char, N> const& src)
 {
-    return detail::deserialize(tuple, src.data(), src.data() + src.size(), std::make_index_sequence<sizeof...(T)>{});
+    return detail::deserialize(tuple, src.data(), src.data() + src.size());
 }
 
 template<class... T> auto deserialize(std::tuple<T...>& tuple, emb::contiguous_buffer<unsigned char>&& src)
 {
-    return detail::deserialize(tuple, src.data(), src.data() + src.size(), std::make_index_sequence<sizeof...(T)>{});
+    return detail::deserialize(tuple, src.data(), src.data() + src.size());
 }
 
 }
