@@ -6,7 +6,11 @@
 #include <emb/ser/serialize.hpp>
 #include <emb/rpc/callback_tuple.hpp>
 #include <emb/rpc/protocol.hpp>
+#include <emb/cpp/tuple.hpp>
 #include <atomic>
+
+
+#include <iostream>
 
 namespace emb::rpc
 {
@@ -29,7 +33,6 @@ class socket_server {
 
     struct client_buffers {
         net::async_core::node_id id = 0;
-        int last_request;
         std::array<unsigned char, 256> in_buff;
         std::array<unsigned char, 256> out_buff;
     };
@@ -75,31 +78,40 @@ private:
     void shedule_next_request(client_buffers &slot) {
         server_.read(
             slot.id,
-            emb::contiguous_buffer{slot.in_buff, ser::size_requirements(protocol::request_header{}).min},
+            emb::contiguous_buffer{slot.in_buff, sizeof(ser::tuple_size_type)},
             [&slot, this] { handle_request_header(slot); }
         );
     }
 
     void handle_request_header(client_buffers &slot) {
-        protocol::request_header header;
-        ser::deserialize(header, slot.in_buff);
+        auto payload_size = ser::deserialize_size(emb::contiguous_buffer{slot.in_buff});
 
-        slot.last_request = std::get<0>(header);
+        std::cout << "got header, size = " << payload_size << std::endl;
 
         server_.read(
             slot.id,
-            emb::contiguous_buffer{slot.in_buff, std::get<1>(header)},
+            emb::contiguous_buffer{slot.in_buff}.slice(sizeof(ser::tuple_size_type), payload_size - sizeof(ser::tuple_size_type)),
             [&slot, this] { handle_request_data(slot); }
         );
     }
 
     void handle_request_data(client_buffers &slot) {
+        std::tuple<int> call_id {-1};
+        ser::deserialize(call_id, slot.in_buff); // TODO: check
+
+        std::cout << "got msg id " << std::get<0>(call_id) << std::endl;
+
         callbacks_.visit(
-            slot.last_request,
+            std::get<0>(call_id),
             [&slot, this](auto& callback_data) {
                 using callback_type = std::decay_t<decltype(callback_data)>;
-                typename callback_type::arguments_tuple arguments;
-                ser::deserialize(arguments, slot.in_buff);
+
+                // message in form of [id, args...]
+                auto message = std::tuple_cat(std::tuple<int>{},  typename callback_type::arguments_tuple{});
+                ser::deserialize(message, slot.in_buff);
+
+                // transform [id, args..] to [args...]
+                auto arguments = cpp::tuple_slice<1, std::tuple_size_v<decltype(message)> - 1>(message);
 
                 if constexpr (std::is_same_v<void, typename callback_type::return_type>) {
                     std::apply(callback_data.callback, arguments);
