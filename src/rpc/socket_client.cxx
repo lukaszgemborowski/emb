@@ -1,8 +1,5 @@
 #include "emb/rpc/socket_client.hpp"
 
-
-#include <iostream>
-
 namespace emb::rpc
 {
 
