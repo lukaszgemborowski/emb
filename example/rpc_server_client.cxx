@@ -44,7 +44,7 @@ public:
         thread_ = std::thread { [this] { rpc_.run(); } };
     }
 
-    ~Server() {
+    void join() {
         thread_.join();
     }
 
@@ -84,4 +84,5 @@ int main()
     std::cout << "Remote mul result (21 * 2) = " << cli.call<SimpleApi::Function::mul>(21, 2) << std::endl;
 
     cli.call<SimpleApi::Function::stop>();
+    srv.join();
 }
