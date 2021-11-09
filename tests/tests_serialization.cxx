@@ -71,3 +71,14 @@ TEST_CASE("Serialize a size of the tuple", "[serialize]")
     CHECK(three_char_size + sizeof(emb::ser::tuple_size_type) == emb::ser::deserialize_size(emb::contiguous_buffer{buffer}));
     CHECK(emb::ser::deserialize_size(emb::contiguous_buffer{buffer}) == emb::ser::size_requirements(t).min);
 }
+
+TEST_CASE("Serialize a std::string", "[serialize]")
+{
+    std::tuple<std::string> t1{"foo"};
+    std::tuple<std::string> t2;
+    std::array<unsigned char, 64> buff;
+    auto size = emb::ser::serialize(t1, buff);
+    CHECK(size == 9);
+    CHECK(emb::ser::deserialize(t2, buff) == size);
+    CHECK(t1 == t2);
+}

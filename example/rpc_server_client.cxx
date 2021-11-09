@@ -13,6 +13,7 @@ struct SimpleApi
     enum class Function {
         add,
         mul,
+        print,
         stop
     };
 
@@ -21,9 +22,10 @@ struct SimpleApi
         using namespace emb::rpc;
         return make_api(
             // map function ID to function signature
-            procedure<Function::add,    int (int, int)>{},
-            procedure<Function::mul,    int (int, int)>{},
-            procedure<Function::stop,   void()        >{}
+            procedure<Function::add,            int  (int, int)>{},
+            procedure<Function::mul,            int  (int, int)>{},
+            procedure<Function::print,          void (std::string)>{},
+            procedure<Function::stop,           void ()>{}
         );
     }
 };
@@ -37,6 +39,7 @@ public:
     {
         rpc_.callback<SimpleApi::Function::add>() = [this](int a, int b) { return add(a, b); };
         rpc_.callback<SimpleApi::Function::mul>() = [this](int a, int b) { return mul(a, b); };
+        rpc_.callback<SimpleApi::Function::print>() = [this]( auto const& str) { return print(str); };
         rpc_.callback<SimpleApi::Function::stop>() = [this] { stop(); };
     }
 
@@ -57,6 +60,10 @@ private:
         return a * b;
     }
 
+    void print(std::string const& str) {
+        std::cout << "got string: " << str << std::endl;
+    }
+
     void stop() {
         rpc_.stop_running();
     }
@@ -69,6 +76,8 @@ private:
 
 int main()
 {
+    using namespace std::string_literals;
+
     const char* socket_name = "/tmp/test.sock";
     Server srv{socket_name};
 
@@ -82,6 +91,7 @@ int main()
     // remotely call the server API
     std::cout << "Remote add result (40 + 2) = " << cli.call<SimpleApi::Function::add>(40, 2) << std::endl;
     std::cout << "Remote mul result (21 * 2) = " << cli.call<SimpleApi::Function::mul>(21, 2) << std::endl;
+    cli.call<SimpleApi::Function::print>("Hello server!"s);
 
     cli.call<SimpleApi::Function::stop>();
     srv.join();

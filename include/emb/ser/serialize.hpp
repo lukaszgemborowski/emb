@@ -47,6 +47,12 @@ struct serdes {
     static constexpr auto max_size() {
         return sizeof(T);
     }
+
+    static constexpr auto is_constant_size() {
+        return true;
+    }
+
+    using element_type = T;
 };
 
 template<class T, std::size_t N>
@@ -86,6 +92,77 @@ struct serdes<std::array<T, N>> {
     static constexpr auto max_size() {
         return serdes<T>::min_size() * N;
     }
+
+    static constexpr auto is_constant_size() {
+        return serdes<T>::is_constant_size();
+    }
+
+    using element_type = std::array<T, N>;
+};
+
+template<>
+struct serdes<std::string>
+{
+    using size_type = std::uint16_t;
+    using size_type_serializer = serdes<size_type>;
+
+    static_assert(size_type_serializer::is_constant_size());
+
+    static bool serialize(std::string const& object, unsigned char** curr, unsigned char* end) {
+        if (object.size() > std::numeric_limits<size_type>::max()) {
+            return false;
+        }
+
+        if (end - *curr  < object.size() + size_type_serializer::min_size()) {
+            return false;
+        }
+
+        size_type size = static_cast<size_type>(object.size());
+
+        if (!size_type_serializer::serialize(size, curr, end)) {
+            return false;
+        }
+
+        std::memcpy(*curr, object.c_str(), size);
+        *curr += size;
+
+        return true;
+    }
+
+    static bool deserialize(std::string& object, unsigned char const** curr, unsigned char const* end) {
+        if (end - *curr < size_type_serializer::min_size()) {
+            return false;
+        }
+
+        size_type size = 0;
+
+        if (!size_type_serializer::deserialize(size, curr, end)) {
+            return false;
+        }
+
+        if (end - *curr < size) {
+            return false;
+        }
+
+        object = std::string{reinterpret_cast<const char*>(*curr), size};
+        *curr += size;
+
+        return true;
+    }
+
+    static constexpr auto min_size() {
+        return 0;
+    }
+
+    static constexpr auto max_size() {
+        return std::numeric_limits<size_type>::max();
+    }
+
+    static constexpr auto is_constant_size() {
+        return false;
+    }
+
+    using element_type = std::string;
 };
 
 template<class... T>
@@ -99,7 +176,7 @@ struct serdes<std::tuple<T...>>
 
         visit_all(
             [&](auto const& value) {
-                using type = std::remove_reference_t<std::remove_const_t<decltype(value)>>;
+                using type = std::remove_cv_t<std::remove_reference_t<decltype(value)>>;
                 if (have_space && !serdes<type>::serialize(value, curr, end)) {
                     have_space = false;
                 }
