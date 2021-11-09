@@ -9,9 +9,6 @@
 #include <emb/cpp/tuple.hpp>
 #include <atomic>
 
-
-#include <iostream>
-
 namespace emb::rpc
 {
 
@@ -86,8 +83,6 @@ private:
     void handle_request_header(client_buffers &slot) {
         auto payload_size = ser::deserialize_size(emb::contiguous_buffer{slot.in_buff});
 
-        std::cout << "got header, size = " << payload_size << std::endl;
-
         server_.read(
             slot.id,
             emb::contiguous_buffer{slot.in_buff}.slice(sizeof(ser::tuple_size_type), payload_size - sizeof(ser::tuple_size_type)),
@@ -98,8 +93,6 @@ private:
     void handle_request_data(client_buffers &slot) {
         std::tuple<int> call_id {-1};
         ser::deserialize(call_id, slot.in_buff); // TODO: check
-
-        std::cout << "got msg id " << std::get<0>(call_id) << std::endl;
 
         callbacks_.visit(
             std::get<0>(call_id),
