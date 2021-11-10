@@ -1,0 +1,3 @@
+# emb
+
+RPC, IPC and serialization C++17 library. Work in progress...
