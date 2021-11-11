@@ -22,12 +22,28 @@ constexpr auto tuple_slice(std::tuple<T...> const& src, std::index_sequence<I...
 
 }
 
+/**
+ * \brief Slice the tuple, create a sub-tuple.
+ *
+ * Slice C items starting at index S. Create a new tuple with a copy
+ * of the elements [S, C+S].
+ */
 template<std::size_t S, std::size_t C, class... T>
 constexpr auto tuple_slice(std::tuple<T...> const& src) {
-    static_assert(S + C <= sizeof...(T));
-    return detail::tuple_slice(
-        src,
-        detail::offset_index_sequence<S>(std::make_index_sequence<C>{}));
+    static_assert(S >= 0                , "start index must be equal or greater than 0");
+    static_assert(C >= 0                , "count must be equal or greater than 0");
+    static_assert(S + C <= sizeof...(T) , "range is outside of the tuple");
+
+    if constexpr (C == 0) {
+        return std::tuple<>{};
+    } else {
+        return detail::tuple_slice(
+            src,
+            detail::offset_index_sequence<S>(
+                std::make_index_sequence<C>{}
+            )
+        );
+    }
 }
 
 }
