@@ -7,6 +7,9 @@
 namespace emb::ser::detail
 {
 
+/**
+ * \brief Base template for serialize/deserialize.
+ */
 template<class T>
 struct serdes {
     static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");

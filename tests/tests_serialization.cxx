@@ -1,5 +1,6 @@
 #include "catch.hpp"
 #include <emb/ser/serialize.hpp>
+#include <emb/ser/deserialize.hpp>
 
 TEST_CASE("Serialize tuples", "[serialize]")
 {

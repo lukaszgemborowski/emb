@@ -4,6 +4,7 @@
 #include <emb/net/socket.hpp>
 #include <emb/net/async_socket_server.hpp>
 #include <emb/ser/serialize.hpp>
+#include <emb/ser/deserialize.hpp>
 #include <emb/rpc/callback_tuple.hpp>
 #include <emb/rpc/protocol.hpp>
 #include <emb/cpp/tuple.hpp>

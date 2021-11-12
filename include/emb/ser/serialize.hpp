@@ -31,20 +31,7 @@ std::size_t serialize(T const& tuple, unsigned char* begin, unsigned char* end)
     }
 }
 
-template<class T>
-std::size_t deserialize(T& tuple, unsigned char const* begin, unsigned char const* end)
-{
-    auto *curr = begin;
-    bool result = serdes<T>::deserialize(tuple, &curr, end);
-
-    if (result) {
-        return curr - begin;
-    } else {
-        return -1;
-    }
-}
-
-}
+} // namespace detail
 
 // size query interface
 template<class... T> constexpr auto size_requirements(std::tuple<T...> const&)
@@ -60,52 +47,38 @@ template<class... T> constexpr auto size_requirements(std::tuple<T...> const&)
     return r;
 }
 
-inline auto deserialize_size(emb::contiguous_buffer<const unsigned char> buffer)
-{
-    if (buffer.size() < sizeof(std::uint32_t)) {
-        return invalid_size;
-    }
-
-    tuple_size_type size = 0;
-    auto ptr = buffer.data();
-    auto pptr = &ptr;
-    if (detail::serdes<tuple_size_type>::deserialize(size, pptr, buffer.data() + buffer.size())) {
-        return size + static_cast<tuple_size_type>(sizeof(tuple_size_type));
-    } else {
-        return invalid_size;
-    }
-}
-
-// serialize interface
+/**
+ * \brief Serialize tuple into raw buffer.
+ * \param tuple input tuple
+ * \param begin beginning of the output buffer
+ * \param end   past the end buffer pointer
+ * \return Bytes written to the buffer or -1 on error.
+ */
 template<class... T> auto serialize(std::tuple<T...> const& tuple, unsigned char* begin, unsigned char* end)
 {
     return detail::serialize(tuple, begin, end);
 }
 
+/**
+ * \brief Serialize tuple into std::array.
+ * \param tuple input tuple
+ * \param dest  destination buffer
+ * \return Bytes written to the buffer or -1 on error.
+ */
 template<std::size_t N, class... T> auto serialize(std::tuple<T...> const& tuple, std::array<unsigned char, N>& dest)
 {
     return detail::serialize(tuple, dest.data(), dest.data() + dest.size());
 }
 
+/**
+ * \brief Serialize tuple into emb::contiguous_buffer
+ * \param tuple input tuple
+ * \param dest  destination buffer
+ * \return Bytes written to the buffer or -1 on error.
+ */
 template<class... T> auto serialize(std::tuple<T...> const& tuple, emb::contiguous_buffer<unsigned char>&& dest)
 {
     return detail::serialize(tuple, dest.data(), dest.data() + dest.size());
-}
-
-// deserialize interface
-template<class... T> auto deserialize(std::tuple<T...>& tuple, unsigned char* begin, unsigned char* end)
-{
-    return detail::deserialize(tuple, begin, end);
-}
-
-template<std::size_t N, class... T> auto deserialize(std::tuple<T...>& tuple, std::array<unsigned char, N> const& src)
-{
-    return detail::deserialize(tuple, src.data(), src.data() + src.size());
-}
-
-template<class... T> auto deserialize(std::tuple<T...>& tuple, emb::contiguous_buffer<unsigned char>&& src)
-{
-    return detail::deserialize(tuple, src.data(), src.data() + src.size());
 }
 
 }
