@@ -21,14 +21,7 @@ namespace detail
 template<class T>
 std::size_t serialize(T const& tuple, unsigned char* begin, unsigned char* end)
 {
-    auto *curr = begin;
-    bool result = serdes<T>::serialize(tuple, &curr, end);
-
-    if (result) {
-        return curr - begin;
-    } else {
-        return -1;
-    }
+    return serdes<T>::serialize(tuple, begin, end);
 }
 
 } // namespace detail

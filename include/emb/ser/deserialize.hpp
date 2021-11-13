@@ -14,14 +14,7 @@ namespace detail
 template<class T>
 std::size_t deserialize(T& tuple, unsigned char const* begin, unsigned char const* end)
 {
-    auto *curr = begin;
-    bool result = serdes<T>::deserialize(tuple, &curr, end);
-
-    if (result) {
-        return curr - begin;
-    } else {
-        return -1;
-    }
+    return serdes<T>::deserialize(tuple, begin, end);
 }
 
 } // namespace detail
@@ -33,9 +26,8 @@ inline auto deserialize_size(emb::contiguous_buffer<const unsigned char> buffer)
     }
 
     tuple_size_type size = 0;
-    auto ptr = buffer.data();
-    auto pptr = &ptr;
-    if (detail::serdes<tuple_size_type>::deserialize(size, pptr, buffer.data() + buffer.size())) {
+
+    if (detail::serdes<tuple_size_type>::deserialize(size, buffer.data(), buffer.data() + buffer.size())) {
         return size + static_cast<tuple_size_type>(sizeof(tuple_size_type));
     } else {
         return invalid_size;

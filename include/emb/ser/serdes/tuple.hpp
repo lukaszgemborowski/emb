@@ -11,16 +11,23 @@ namespace emb::ser::detail
 template<class... T>
 struct serdes<std::tuple<T...>>
 {
-    static bool serialize(std::tuple<T...> const& object, unsigned char** curr, unsigned char* end) {
-        std::uint32_t overall_size = 0;
+    using encoded_size_type = std::uint32_t;
+
+    static std::size_t serialize(std::tuple<T...> const& object, unsigned char* curr, unsigned char* end) {
+        encoded_size_type overall_size = 0;
         bool have_space = true;
-        auto buffer_begin = *curr;
-        *curr += sizeof(overall_size);
 
         visit_all(
             [&](auto const& value) {
                 using type = std::remove_cv_t<std::remove_reference_t<decltype(value)>>;
-                if (have_space && !serdes<type>::serialize(value, curr, end)) {
+
+                if (!have_space) {
+                    return;
+                }
+
+                if (auto size = serdes<type>::serialize(value, curr + overall_size + sizeof(encoded_size_type), end); size >= 0) {
+                    overall_size += size;
+                } else {
                     have_space = false;
                 }
             },
@@ -32,23 +39,31 @@ struct serdes<std::tuple<T...>>
             return false;
         }
 
-        overall_size = *curr - buffer_begin - sizeof(overall_size);
-        serdes<std::uint32_t>::serialize(overall_size, &buffer_begin, end);
+        serdes<std::uint32_t>::serialize(overall_size, curr, end);
 
-        return true;
+        return overall_size + sizeof(encoded_size_type);
     }
 
-    static bool deserialize(std::tuple<T...>& object, unsigned char const** curr, unsigned char const* end) {
-        std::uint32_t overall_size = -1;
+    static std::size_t deserialize(std::tuple<T...>& object, unsigned char const* curr, unsigned char const* end) {
+        encoded_size_type overall_size = 0;
         bool correct = true;
-        if (!serdes<std::uint32_t>::deserialize(overall_size, curr, end)) {
+        auto offset = serdes<std::uint32_t>::deserialize(overall_size, curr, end);
+
+        if (offset == -1) {
             return false;
         }
 
         visit_all(
             [&](auto& value) {
                 using type = std::remove_reference_t<std::remove_const_t<decltype(value)>>;
-                if (correct && !serdes<type>::deserialize(value, curr, end)) {
+
+                if (!correct) {
+                    return;
+                }
+
+                if (auto size = serdes<type>::deserialize(value, curr + offset, end); size >= 0) {
+                    offset += size;
+                } else {
                     correct = false;
                 }
             },
@@ -56,7 +71,7 @@ struct serdes<std::tuple<T...>>
             std::make_index_sequence<sizeof...(T)>{}
         );
 
-        return correct;
+        return offset;
     }
 
     static constexpr auto min_size() {

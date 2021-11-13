@@ -9,32 +9,38 @@ namespace emb::ser::detail
 
 template<class T, std::size_t N>
 struct serdes<std::array<T, N>> {
-    static bool serialize(std::array<T, N> const& object, unsigned char** curr, unsigned char* end) {
-        if (end - *curr  < min_size()) {
-            return false;
+    static std::size_t serialize(std::array<T, N> const& object, unsigned char* curr, unsigned char* end) {
+        if (end - curr  < min_size()) {
+            return -1;
         }
 
+        std::size_t result = 0;
         for (std::size_t i = 0; i < N; ++i) {
-            if (serdes<T>::serialize(object[i], curr, end) == false) {
-                return false;
+            if (auto size = serdes<T>::serialize(object[i], curr + result, end); size >= 0) {
+                result += size;
+            } else {
+                return -1;
             }
         }
 
-        return true;
+        return result;
     }
 
-    static bool deserialize(std::array<T, N>& object, unsigned char const** curr, unsigned char const* end) {
-        if (end - *curr < min_size()) {
+    static std::size_t deserialize(std::array<T, N>& object, unsigned char const* curr, unsigned char const* end) {
+        if (end - curr < min_size()) {
             return false;
         }
 
+        std::size_t result = 0;
         for (std::size_t i = 0; i < N; ++i) {
-            if (serdes<T>::deserialize(object[i], curr, end) == false) {
-                return false;
+            if (auto size = serdes<T>::deserialize(object[i], curr + result, end); size >= 0) {
+                result += size;
+            } else {
+                return -1;
             }
         }
 
-        return true;
+        return result;
     }
 
     static constexpr auto min_size() {

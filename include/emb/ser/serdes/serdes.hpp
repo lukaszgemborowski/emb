@@ -14,24 +14,22 @@ template<class T>
 struct serdes {
     static_assert(std::is_trivially_copyable_v<T>, "T must be trivially copyable");
 
-    static bool serialize(T const& object, unsigned char** curr, unsigned char* end) {
-        if (end - *curr < sizeof(T)) {
-            return false;
+    static std::size_t serialize(T const& object, unsigned char* curr, unsigned char* end) {
+        if (end - curr < sizeof(T)) {
+            return -1;
         }
 
-        std::memcpy(*curr, &object, sizeof(object));
-        (*curr) += sizeof(T);
-        return true;
+        std::memcpy(curr, &object, sizeof(object));
+        return sizeof(T);
     }
 
-    static bool deserialize(T& object, unsigned char const** curr, unsigned char const* end) {
-        if (end - *curr < sizeof(T)) {
-            return false;
+    static std::size_t deserialize(T& object, unsigned char const* curr, unsigned char const* end) {
+        if (end - curr < sizeof(T)) {
+            return -1;
         }
 
-        std::memcpy(&object, *curr, sizeof(T));
-        (*curr) += sizeof(T);
-        return true;
+        std::memcpy(&object, curr, sizeof(T));
+        return sizeof(T);
     }
 
     static constexpr auto min_size() {

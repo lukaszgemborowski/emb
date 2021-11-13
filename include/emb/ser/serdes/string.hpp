@@ -15,46 +15,44 @@ struct serdes<std::string>
 
     static_assert(size_type_serializer::is_constant_size());
 
-    static bool serialize(std::string const& object, unsigned char** curr, unsigned char* end) {
+    static std::size_t serialize(std::string const& object, unsigned char* curr, unsigned char* end) {
         if (object.size() > std::numeric_limits<size_type>::max()) {
-            return false;
+            return -1;
         }
 
-        if (end - *curr  < object.size() + size_type_serializer::min_size()) {
-            return false;
+        if (end - curr < object.size() + size_type_serializer::min_size()) {
+            return -1;
         }
 
         size_type size = static_cast<size_type>(object.size());
+        auto read_size = size_type_serializer::serialize(size, curr, end);
 
-        if (!size_type_serializer::serialize(size, curr, end)) {
-            return false;
+        if (read_size == -1) {
+            return -1;
         }
 
-        std::memcpy(*curr, object.c_str(), size);
-        *curr += size;
-
-        return true;
+        std::memcpy(curr + size_type_serializer::min_size(), object.c_str(), size);
+        return read_size + size;
     }
 
-    static bool deserialize(std::string& object, unsigned char const** curr, unsigned char const* end) {
-        if (end - *curr < size_type_serializer::min_size()) {
+    static std::size_t deserialize(std::string& object, unsigned char const* curr, unsigned char const* end) {
+        if (end - curr < size_type_serializer::min_size()) {
             return false;
         }
 
         size_type size = 0;
+        auto read_size = size_type_serializer::deserialize(size, curr, end);
 
-        if (!size_type_serializer::deserialize(size, curr, end)) {
-            return false;
+        if (read_size == -1) {
+            return -1;
         }
 
-        if (end - *curr < size) {
-            return false;
+        if (end - curr < size) {
+            return -1;
         }
 
-        object = std::string{reinterpret_cast<const char*>(*curr), size};
-        *curr += size;
-
-        return true;
+        object = std::string{reinterpret_cast<const char*>(curr + size_type_serializer::min_size()), size};
+        return read_size + size;
     }
 
     static constexpr auto min_size() {
