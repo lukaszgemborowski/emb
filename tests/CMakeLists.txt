@@ -9,6 +9,7 @@ add_executable(
     tests_scratchpad.cxx
     tests_async_socket_server.cxx
     tests_tuple.cxx
+    tests_string.cxx
 )
 
 target_link_libraries(tests emb pthread)
