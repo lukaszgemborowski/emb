@@ -1,5 +1,6 @@
 #include "catch.hpp"
 #include <emb/ser/serialize.hpp>
+#include <emb/ser/deserialize.hpp>
 
 TEST_CASE("Serialize tuples", "[serialize]")
 {
@@ -43,8 +44,8 @@ TEST_CASE("Serialize an std::array", "[serialize]")
     decltype(toser) todeser;
     std::array<unsigned char, 64> buffer;
 
-    emb::ser::serialize(toser, emb::contiguous_buffer{buffer});
-    emb::ser::deserialize(todeser, emb::contiguous_buffer{buffer});
+    REQUIRE(emb::ser::serialize(toser, emb::contiguous_buffer{buffer}) > 0);
+    REQUIRE(emb::ser::deserialize(todeser, emb::contiguous_buffer{buffer}) > 0);
 
     REQUIRE(std::get<0>(toser) == std::get<0>(todeser));
     REQUIRE(std::get<1>(toser) == std::get<1>(todeser));
@@ -59,13 +60,12 @@ TEST_CASE("Serialize a size of the tuple", "[serialize]")
     unsigned char* beg = buffer.data();
     unsigned char* end = buffer.data() + buffer.size();
 
-    emb::ser::detail::serdes<tuple_t>::serialize(t, &beg, end);
-
-    REQUIRE((end - beg) > three_char_size);
+    auto serialized_size = emb::ser::detail::serdes<tuple_t>::serialize(t, beg, end);
+    REQUIRE(serialized_size > three_char_size);
 
     std::uint32_t written_size = 0;
     const unsigned char* beg2 = buffer.data();
-    emb::ser::detail::serdes<std::uint32_t>::deserialize(written_size, &beg2, end);
+    emb::ser::detail::serdes<std::uint32_t>::deserialize(written_size, beg2, end);
 
     CHECK(written_size == three_char_size);
     CHECK(three_char_size + sizeof(emb::ser::tuple_size_type) == emb::ser::deserialize_size(emb::contiguous_buffer{buffer}));

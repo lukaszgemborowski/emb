@@ -4,6 +4,7 @@
 #include <emb/net/socket.hpp>
 #include <emb/rpc/api.hpp>
 #include <emb/ser/serialize.hpp>
+#include <emb/ser/deserialize.hpp>
 #include <emb/contiguous_buffer.hpp>
 #include <array>
 #include <stdexcept>

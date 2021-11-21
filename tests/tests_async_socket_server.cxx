@@ -2,6 +2,7 @@
 #include "emb/net/uds_client_socket.hpp"
 #include "emb/net/uds_server_socket.hpp"
 #include "emb/ser/serialize.hpp"
+#include "emb/ser/deserialize.hpp"
 #include <thread>
 #include "catch.hpp"
 
