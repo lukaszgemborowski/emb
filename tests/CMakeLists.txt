@@ -10,6 +10,7 @@ add_executable(
     tests_async_socket_server.cxx
     tests_tuple.cxx
     tests_string.cxx
+    tests_to_tuple.cxx
 )
 
 target_link_libraries(tests emb pthread)
